@@ -1,0 +1,78 @@
+async function swapUSDCtoETH(wETHAddress = '0x20b28B1e4665FFf290650586ad76E977EAb90c5D', USDCAddress = '0x0faF6df7054946141266420b43783387A78d82A9') {
+
+    const classicPoolFactory = new Contract(
+        '0xf2FD2bc2fBC12842aAb6FbB8b1159a6a83E72006',
+        SyncSwapClassicPoolFactory,
+        zkSyncWallet,
+    );
+
+    // Gets the address of the ETH/DAI Classic Pool.
+    // wETH is used internally by the pools.
+    const poolAddress = await classicPoolFactory.getPool(USDCAddress, wETHAddress);
+    console.log(poolAddress)
+    // Checks whether the pool exists.
+    if (poolAddress === ZERO_ADDRESS) {
+        throw Error('Pool not exists');
+    }
+
+    // The input amount of ETH
+    const enter = 0.001
+    const entervalue = enter.toString()
+    const value = ethers.utils.parseEther(entervalue);
+    console.log(value)
+
+    // Constructs the swap paths with steps.
+    // Determine withdraw mode, to withdraw native ETH or wETH on last step.
+    // 0 - vault internal transfer
+    // 1 - withdraw and unwrap to naitve ETH
+    // 2 - withdraw and wrap to wETH
+
+    const withdrawMode = 1; // 1 or 2 to withdraw to user's wallet
+
+    const swapData = ethers.utils.defaultAbiCoder.encode(
+        ["address", "address", "uint8"],
+        [wETHAddress, signeraddress, withdrawMode], // tokenIn, to, withdraw mode
+    );
+
+    // We have only 1 step.
+    const steps = [{
+        pool: poolAddress,
+        data: swapData,
+        callback: ZERO_ADDRESS, // we don't have a callback
+        callbackData: '0x',
+    }];
+
+    // If we want to use the native ETH as the input token,
+    // the `tokenIn` on path should be replaced with the zero address.
+    // Note: however we still have to encode the wETH address to pool's swap data.
+    const router = new Contract('0xB3b7fCbb8Db37bC6f572634299A58f51622A847e', SyncSwapRouter, zkSyncWallet);
+
+    // We have only 1 path.
+
+    const paths = [{
+        steps: steps,
+        tokenIn: ZERO_ADDRESS,
+        amountIn: value,
+    }];
+
+
+    // Gets the router contract.
+
+    // Note: checks approval for ERC20 tokens.
+    // The router will handle the deposit to the pool's vault account.
+
+    const gasPrice = await zkSyncProvider.getGasPrice();
+    console.log(gasPrice)
+    const gasLimit = BigNumber.from("7720027");
+    console.log(gasLimit)
+
+    const response = await router.swap(
+        paths, // paths
+        0, // amountOutMin // Note: ensures slippage here
+        BigNumber.from(Math.floor(Date.now() / 1000)).add(1800), // deadline // 30 minutes
+        { gasPrice, gasLimit, value: value }
+
+    );
+
+    await response.wait();
+}
